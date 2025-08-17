@@ -8,6 +8,12 @@ import os
 
 api = Blueprint('api', __name__)
 
+# Dicionário para traduzir o mês para português
+meses_pt = {
+    1: "Jan", 2: "Fev", 3: "Mar", 4: "Abr", 5: "Mai", 6: "Jun",
+    7: "Jul", 8: "Ago", 9: "Set", 10: "Out", 11: "Nov", 12: "Dez"
+}
+
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -51,7 +57,7 @@ def register_user():
 def login():
     data = request.get_json()
     if not data or not 'email' in data or not 'password' in data:
-        return jsonify({'message': 'Não foi possível verificar', 'WWW-Authenticate': 'Basic realm="Login required"'}), 401
+        return jsonify({'message': 'Não foi possível verificar'}), 401
 
     user = User.query.filter_by(email=data['email']).first()
 
@@ -63,7 +69,22 @@ def login():
         'exp': datetime.now(timezone.utc) + timedelta(hours=24)
     }, os.environ.get('SECRET_KEY'), algorithm="HS256")
 
-    return jsonify({'token': token})
+    # Formata a data de criação para "Mês Ano"
+    membro_desde_str = f"{meses_pt[user.created_at.month]} {user.created_at.year}"
+
+    # Monta o objeto de resposta completo para o front-end
+    user_data = {
+        'token': token,
+        'nome': user.nome,
+        'email': user.email,
+        'pontos': user.pontos,
+        'membroDesde': membro_desde_str,
+        # Dados que não existem no banco, retornados como default para não quebrar o app
+        'avatar': None,
+        'totalMedicoes': 0 # Ou qualquer valor padrão que faça sentido
+    }
+
+    return jsonify(user_data)
 
 
 @api.route('/ranking/<int:user_id>', methods=['GET'])
