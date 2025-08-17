@@ -11,4 +11,3 @@ __pycache__/
 # Banco de dados local de desenvolvimento
 instance/
 app.db
-migrations/
