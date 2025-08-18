@@ -8,7 +8,6 @@ import os
 
 api = Blueprint('api', __name__)
 
-# Dicionário para traduzir o mês para português
 meses_pt = {
     1: "Jan", 2: "Fev", 3: "Mar", 4: "Abr", 5: "Mai", 6: "Jun",
     7: "Jul", 8: "Ago", 9: "Set", 10: "Out", 11: "Nov", 12: "Dez"
@@ -69,19 +68,17 @@ def login():
         'exp': datetime.now(timezone.utc) + timedelta(hours=24)
     }, os.environ.get('SECRET_KEY'), algorithm="HS256")
 
-    # Formata a data de criação para "Mês Ano"
     membro_desde_str = f"{meses_pt[user.created_at.month]} {user.created_at.year}"
 
-    # Monta o objeto de resposta completo para o front-end
     user_data = {
+        'id': user.id,
         'token': token,
         'nome': user.nome,
         'email': user.email,
         'pontos': user.pontos,
         'membroDesde': membro_desde_str,
-        # Dados que não existem no banco, retornados como default para não quebrar o app
         'avatar': None,
-        'totalMedicoes': 0 # Ou qualquer valor padrão que faça sentido
+        'totalMedicoes': 0
     }
 
     return jsonify(user_data)
@@ -98,11 +95,17 @@ def get_ranking(current_user, user_id):
     if not all_users_ranked:
         return jsonify({'message': 'Nenhum usuário encontrado.'}), 404
 
-    ranked_list = [{'pos': i + 1, 'nome': u.nome, 'pontos': u.pontos, 'id': u.id} for i, u in enumerate(all_users_ranked)]
+    ranked_list = [{
+        'rank': i + 1,
+        'nome': u.nome,
+        'pontos': u.pontos,
+        'id': str(u.id),
+        'avatar': None
+    } for i, u in enumerate(all_users_ranked)]
 
     user_index = -1
     for i, user_data in enumerate(ranked_list):
-        if user_data['id'] == user_id:
+        if user_data['id'] == str(user_id):
             user_index = i
             break
             
