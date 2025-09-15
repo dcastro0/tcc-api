@@ -1,11 +1,9 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 from .models import User
 from .extensions import db
 import jwt
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, date
 from functools import wraps
-import os
-from datetime import timedelta as dt_timedelta
 
 api = Blueprint('api', __name__)
 
@@ -19,34 +17,37 @@ def token_required(f):
     def decorated(*args, **kwargs):
         token = None
         if 'Authorization' in request.headers:
-            parts = request.headers['Authorization'].split(" ")
-            if len(parts) == 2:
-                token = parts[1]
+            auth_header = request.headers['Authorization']
+            if auth_header.startswith('Bearer '):
+                token = auth_header.split(" ")[1]
         if not token:
             return jsonify({'message': 'Token está faltando!'}), 401
         try:
-            data = jwt.decode(token, os.environ.get('SECRET_KEY'), algorithms=["HS256"])
+            secret = current_app.config.get('SECRET_KEY')
+            data = jwt.decode(token, secret, algorithms=["HS256"])
             current_user = User.query.get(data['user_id'])
-        except Exception as e:
-            return jsonify({'message': 'Token é inválido ou expirou!', 'error': str(e)}), 401
+            if not current_user:
+                 return jsonify({'message': 'Usuário do token não encontrado.'}), 401
+        except jwt.ExpiredSignatureError:
+            return jsonify({'message': 'Token expirou!'}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({'message': 'Token é inválido!'}), 401
         return f(current_user, *args, **kwargs)
     return decorated
 
 @api.route('/register', methods=['POST'])
 def register_user():
     data = request.get_json()
-    if not data or not 'email' in data or not 'password' in data or not 'nome' in data:
+    if not all(k in data for k in ['nome', 'email', 'password']):
         return jsonify({'message': 'Faltando dados para registro.'}), 400
     if User.query.filter_by(email=data['email']).first():
         return jsonify({'message': 'Usuário com este email já existe.'}), 409
-    new_user = User(
-        nome=data['nome'],
-        email=data['email'],
-        pontos=data.get('pontos', 0)
-    )
+    
+    new_user = User(nome=data['nome'], email=data['email'])
     new_user.set_password(data['password'])
     db.session.add(new_user)
     db.session.commit()
+    
     return jsonify({'message': 'Usuário criado com sucesso!'}), 201
 
 @api.route('/login', methods=['POST'])
@@ -54,26 +55,27 @@ def login():
     data = request.get_json()
     if not data or not 'email' in data or not 'password' in data:
         return jsonify({'message': 'Não foi possível verificar'}), 401
+    
     user = User.query.filter_by(email=data['email']).first()
     if not user or not user.check_password(data['password']):
         return jsonify({'message': 'Credenciais inválidas!'}), 401
+    
+    secret = current_app.config.get('SECRET_KEY')
     token = jwt.encode({
         'user_id': user.id,
         'exp': datetime.now(timezone.utc) + timedelta(hours=24)
-    }, os.environ.get('SECRET_KEY'), algorithm="HS256")
-    membro_desde_str = f"{meses_pt[user.created_at.month]} {user.created_at.year}"
-    user_data = {
-        'id': user.id,
-        'token': token,
-        'nome': user.nome,
-        'email': user.email,
-        'pontos': user.pontos,
-        'streak_count': user.streak_count,
-        'last_active_date': user.last_active_date.isoformat() if user.last_active_date else None,
-        'membroDesde': membro_desde_str,
-        'avatar': None,
-        'totalMedicoes': 0
-    }
+    }, secret, algorithm="HS256")
+    
+    membro_desde_str = "Data Indisponível"
+    if user.created_at:
+        membro_desde_str = f"{meses_pt[user.created_at.month]} {user.created_at.year}"
+    
+    user_data = user.to_dict()
+    user_data['token'] = token
+    user_data['membroDesde'] = membro_desde_str
+    user_data['avatar'] = None 
+    user_data['totalMedicoes'] = 0
+
     return jsonify(user_data)
 
 @api.route('/heartbeat', methods=['POST'])
@@ -84,27 +86,24 @@ def heartbeat(current_user):
     if not local_date_str:
         return jsonify({'message': 'local_date é obrigatório (YYYY-MM-DD).'}), 400
     try:
-        local_date = datetime.strptime(local_date_str, "%Y-%m-%d").date()
-    except ValueError:
+        local_date_obj = date.fromisoformat(local_date_str)
+    except (ValueError, TypeError):
         return jsonify({'message': 'local_date inválido. Use YYYY-MM-DD.'}), 400
-    try:
-        with db.session.begin():
-            user = User.query.get(current_user.id)
-            last = user.last_active_date
-            if last == local_date:
-                pass
-            elif last == (local_date - dt_timedelta(days=1)):
-                user.streak_count = (user.streak_count or 0) + 1
-            else:
-                user.streak_count = 1
-            user.last_active_date = local_date
-            db.session.add(user)
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'message': 'Erro ao atualizar heartbeat', 'error': str(e)}), 500
+
+    last = current_user.last_active_date
+    if last == local_date_obj:
+        pass
+    elif last == (local_date_obj - timedelta(days=1)):
+        current_user.streak_count += 1
+    else:
+        current_user.streak_count = 1
+    
+    current_user.last_active_date = local_date_obj
+    db.session.commit()
+    
     return jsonify({
-        'streak_count': user.streak_count,
-        'last_active_date': user.last_active_date.isoformat() if user.last_active_date else None
+        'streak_count': current_user.streak_count,
+        'last_active_date': current_user.last_active_date.isoformat()
     }), 200
 
 @api.route('/ranking/<int:user_id>', methods=['GET'])
@@ -112,33 +111,41 @@ def heartbeat(current_user):
 def get_ranking(current_user, user_id):
     if current_user.id != user_id:
         return jsonify({'message': 'Não autorizado a ver este ranking.'}), 403
+
+    # ATENÇÃO: A lógica abaixo ainda é ineficiente para muitos usuários.
+    # O ideal é implementar ranking com Window Functions do SQL.
+    # Esta versão é apenas para funcionar, mas deve ser otimizada.
     all_users_ranked = User.query.order_by(User.pontos.desc(), User.created_at.asc()).all()
+    
     if not all_users_ranked:
         return jsonify({'message': 'Nenhum usuário encontrado.'}), 404
-    ranked_list = [{
-        'rank': i + 1,
-        'nome': u.nome,
-        'pontos': u.pontos,
-        'id': str(u.id),
-        'avatar': None
-    } for i, u in enumerate(all_users_ranked)]
+
+    ranked_list = []
     user_index = -1
-    for i, user_data in enumerate(ranked_list):
-        if user_data['id'] == str(user_id):
+    for i, u in enumerate(all_users_ranked):
+        user_data = {
+            'rank': i + 1,
+            'nome': u.nome,
+            'pontos': u.pontos,
+            'id': u.id,
+            'avatar': None
+        }
+        ranked_list.append(user_data)
+        if u.id == user_id:
             user_index = i
-            break
+
     if user_index == -1:
         return jsonify({'message': 'Usuário da requisição não encontrado no ranking.'}), 404
+    
     top_5 = ranked_list[:5]
     start = max(0, user_index - 2)
     end = min(len(ranked_list), user_index + 3)
     user_neighborhood = ranked_list[start:end]
-    user_in_top_5 = user_index < 5
-    response = {
+    
+    return jsonify({
         'top_5': top_5,
         'user_ranking': {
-            'message': 'Você está no Top 5!' if user_in_top_5 else 'Sua posição e usuários próximos.',
+            'message': 'Sua posição e usuários próximos.',
             'data': user_neighborhood
         }
-    }
-    return jsonify(response)
+    })

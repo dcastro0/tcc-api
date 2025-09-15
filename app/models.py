@@ -1,6 +1,7 @@
 from .extensions import db
-from datetime import datetime, date
+from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
+from sqlalchemy.sql import func
 
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -8,9 +9,9 @@ class User(db.Model):
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(256), nullable=False)
     pontos = db.Column(db.Integer, default=0, index=True)
-    created_at = db.Column(db.DateTime, server_default=db.func.now())
-    streak_count = db.Column(db.Integer, nullable=False, server_default='0')
-    last_active_date = db.Column(db.Date, nullable=True)
+    created_at = db.Column(db.DateTime, server_default=func.now())
+    streak_count = db.Column(db.Integer, default=0, nullable=False, index=True)
+    last_active_date = db.Column(db.Date, nullable=True, index=True)
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)

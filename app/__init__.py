@@ -1,5 +1,5 @@
 from flask import Flask
-from .extensions import db
+from .extensions import db, migrate # Importe o migrate
 from .routes import api
 from config import Config
 import os
@@ -11,7 +11,9 @@ def create_app(config_class=Config):
     
     CORS(app) 
 
+    # Inicializa as extensões
     db.init_app(app)
+    migrate.init_app(app, db) # Adicione esta linha
 
     app.register_blueprint(api, url_prefix='/api')
     
