@@ -4,6 +4,8 @@ from .extensions import db
 import jwt
 from datetime import datetime, timedelta, timezone, date
 from functools import wraps
+from .models import User, Achievement, UserAchievement
+from sqlalchemy.orm import joinedload
 
 api = Blueprint('api', __name__)
 
@@ -43,7 +45,9 @@ def register_user():
     if User.query.filter_by(email=data['email']).first():
         return jsonify({'message': 'Usuário com este email já existe.'}), 409
     
-    new_user = User(nome=data['nome'], email=data['email'])
+    new_user = User()
+    new_user.nome = data['nome']
+    new_user.email = data['email']
     new_user.set_password(data['password'])
     db.session.add(new_user)
     db.session.commit()
@@ -101,9 +105,16 @@ def heartbeat(current_user):
     current_user.last_active_date = local_date_obj
     db.session.commit()
     
+
+    unlocked_streak_3 = update_achievement_progress(current_user, 'CONSISTENCIA_I', absolute_value=current_user.streak_count)
+    unlocked_streak_7 = update_achievement_progress(current_user, 'GUARDAO_DA_SAUDE', absolute_value=current_user.streak_count)
+    
+    unlocked_now = [ach for ach in [unlocked_streak_3, unlocked_streak_7] if ach]
+
     return jsonify({
         'streak_count': current_user.streak_count,
-        'last_active_date': current_user.last_active_date.isoformat()
+        'last_active_date': current_user.last_active_date.isoformat(),
+        'unlocked_achievements': unlocked_now
     }), 200
 
 @api.route('/ranking/<int:user_id>', methods=['GET'])
@@ -112,9 +123,6 @@ def get_ranking(current_user, user_id):
     if current_user.id != user_id:
         return jsonify({'message': 'Não autorizado a ver este ranking.'}), 403
 
-    # ATENÇÃO: A lógica abaixo ainda é ineficiente para muitos usuários.
-    # O ideal é implementar ranking com Window Functions do SQL.
-    # Esta versão é apenas para funcionar, mas deve ser otimizada.
     all_users_ranked = User.query.order_by(User.pontos.desc(), User.created_at.asc()).all()
     
     if not all_users_ranked:
@@ -149,3 +157,77 @@ def get_ranking(current_user, user_id):
             'data': user_neighborhood
         }
     })
+@api.route('/achievements', methods=['GET'])
+@token_required
+def get_user_achievements(current_user):
+    all_achievements = Achievement.query.all()
+    user_progress = UserAchievement.query.filter_by(user_id=current_user.id).all()
+
+    progress_map = {ua.achievement_id: ua for ua in user_progress}
+
+    result = []
+    for ach in all_achievements:
+        user_ach = progress_map.get(ach.id)
+        if user_ach:
+            result.append(user_ach.to_dict(ach.to_dict()))
+        else:
+            ach_data = ach.to_dict()
+            result.append({
+                'user_id': current_user.id,
+                'achievement_id': ach.id,
+                'progress': 0,
+                'unlocked': False,
+                'unlocked_at': None,
+                **ach_data
+            })
+
+    result.sort(key=lambda x: x['id']) 
+
+    return jsonify(result), 200
+
+def update_achievement_progress(user, achievement_code, progress_increment=1, absolute_value=None):
+    achievement = Achievement.query.filter_by(code=achievement_code).first()
+    if not achievement:
+        current_app.logger.warning(f"Tentativa de atualizar conquista inexistente: {achievement_code}")
+        return None
+
+    user_ach = UserAchievement.query.filter_by(user_id=user.id, achievement_id=achievement.id).first()
+
+    if not user_ach:
+        user_ach = UserAchievement()
+        user_ach.user_id = user.id
+        user_ach.achievement_id = achievement.id
+        user_ach.progress = 0
+        db.session.add(user_ach)
+        try:
+            db.session.flush()
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.error(f"Erro ao adicionar UserAchievement inicial: {e}")
+            return None
+
+
+    if user_ach.unlocked_at:
+        return None
+
+    if absolute_value is not None:
+         user_ach.progress = absolute_value
+    else:
+         user_ach.progress += progress_increment
+
+    unlocked_now = False
+    if achievement.goal is not None and user_ach.progress >= achievement.goal:
+        user_ach.unlocked_at = datetime.now(timezone.utc)
+        user_ach.progress = achievement.goal
+        user.pontos += achievement.points_reward
+        unlocked_now = True
+
+    try:
+       db.session.commit()
+       if unlocked_now:
+           return user_ach.to_dict(achievement.to_dict())
+    except Exception as e:
+       db.session.rollback()
+       current_app.logger.error(f"Erro ao commitar atualização da conquista {achievement_code}: {e}")
+
+    return None

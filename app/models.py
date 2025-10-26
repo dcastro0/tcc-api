@@ -29,3 +29,46 @@ class User(db.Model):
             'last_active_date': self.last_active_date.isoformat() if self.last_active_date else None,
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
+        
+class Achievement(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    code = db.Column(db.String(50), unique=True, nullable=False) # Código único (ex: 'PRIMEIRA_GOTA', 'CONSISTENCIA_I')
+    title = db.Column(db.String(100), nullable=False) # Título (ex: 'Primeira Gota')
+    description = db.Column(db.String(255), nullable=False) # Descrição
+    icon = db.Column(db.String(50), nullable=True) # Nome do ícone (ex: 'droplet')
+    goal = db.Column(db.Integer, nullable=True) # Meta numérica (ex: 3 dias, 50 medições)
+    points_reward = db.Column(db.Integer, default=0) # Pontos ao desbloquear
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'code': self.code,
+            'title': self.title,
+            'description': self.description,
+            'icon': self.icon,
+            'goal': self.goal,
+            'points_reward': self.points_reward
+        }
+
+class UserAchievement(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    achievement_id = db.Column(db.Integer, db.ForeignKey('achievement.id'), nullable=False, index=True)
+    progress = db.Column(db.Integer, default=0)
+    unlocked_at = db.Column(db.DateTime, nullable=True) # Data/hora que foi desbloqueada
+
+    user = db.relationship('User', backref=db.backref('user_achievements', lazy=True))
+    achievement = db.relationship('Achievement', backref=db.backref('user_achievements', lazy=True))
+
+    __table_args__ = (db.UniqueConstraint('user_id', 'achievement_id', name='uq_user_achievement'),)
+
+    def to_dict(self, achievement_data=None):
+        ach_data = achievement_data or self.achievement.to_dict()
+        return {
+            'user_id': self.user_id,
+            'achievement_id': self.achievement_id,
+            'progress': self.progress,
+            'unlocked': self.unlocked_at is not None,
+            'unlocked_at': self.unlocked_at.isoformat() if self.unlocked_at else None,
+            **ach_data # Inclui os dados da definição da conquista
+        }
