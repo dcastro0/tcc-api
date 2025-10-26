@@ -4,7 +4,7 @@
       "code": "PRIMEIRA_GOTA",
       "title": "Primeira Gota",
       "description": "Registre sua primeira glicemia.",
-      "icon": "droplet-outline",
+      "icon": "droplet",
       "goal": 1,
       "points_reward": 50
     },
@@ -12,7 +12,7 @@
       "code": "MARATONISTA_I",
       "title": "Maratonista I",
       "description": "50 medições registradas no total.",
-      "icon": "trending-up-outline",
+      "icon": "trending-up",
       "goal": 50,
       "points_reward": 100
     },
@@ -20,7 +20,7 @@
       "code": "MARATONISTA_II",
       "title": "Maratonista II",
       "description": "250 medições registradas no total.",
-      "icon": "analytics-outline",
+      "icon": "bar-chart-2",
       "goal": 250,
       "points_reward": 250
     },
@@ -28,7 +28,7 @@
       "code": "MARATONISTA_III",
       "title": "Maratonista III",
       "description": "500 medições registradas no total.",
-      "icon": "podium-outline",
+      "icon": "bar-chart",
       "goal": 500,
       "points_reward": 500
     },
@@ -36,7 +36,7 @@
       "code": "MESTRE_GLICEMICO",
       "title": "Mestre Glicêmico",
       "description": "1000 medições registradas no total.",
-      "icon": "trophy-outline",
+      "icon": "trophy",
       "goal": 1000,
       "points_reward": 1000
     },
@@ -44,7 +44,7 @@
       "code": "CONSISTENCIA_I",
       "title": "Consistência I",
       "description": "Medições por 3 dias seguidos.",
-      "icon": "calendar-outline",
+      "icon": "calendar",
       "goal": 3,
       "points_reward": 75
     },
@@ -52,7 +52,7 @@
       "code": "GUARDAO_DA_SAUDE_I",
       "title": "Guardião da Saúde I",
       "description": "7 dias seguidos de medições.",
-      "icon": "shield-checkmark-outline",
+      "icon": "shield",
       "goal": 7,
       "points_reward": 150
     },
@@ -60,7 +60,7 @@
       "code": "CONSISTENCIA_II",
       "title": "Consistência II",
       "description": "14 dias seguidos de medições.",
-      "icon": "ribbon-outline",
+      "icon": "award",
       "goal": 14,
       "points_reward": 300
     },
@@ -68,7 +68,7 @@
       "code": "CONSISTENCIA_III",
       "title": "Consistência III",
       "description": "30 dias seguidos (um mês!).",
-      "icon": "sparkles-outline",
+      "icon": "star",
       "goal": 30,
       "points_reward": 750
     },
@@ -76,7 +76,7 @@
       "code": "LENDA_DA_DISCIPLINA",
       "title": "Lenda da Disciplina",
       "description": "60 dias seguidos de medições.",
-      "icon": "flame-outline",
+      "icon": "flame",
       "goal": 60,
       "points_reward": 1500
     }
