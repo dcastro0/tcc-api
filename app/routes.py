@@ -4,7 +4,8 @@ from .extensions import db
 import jwt
 from datetime import datetime, timedelta, timezone, date
 from functools import wraps
-from .models import User, Achievement, UserAchievement, Measurement
+# Importamos Measurement aqui, pois vamos precisar dele no login/heartbeat
+from .models import User, Achievement, UserAchievement, Measurement 
 from sqlalchemy.orm import joinedload
 from dateutil import parser
 
@@ -79,7 +80,11 @@ def login():
     user_data['token'] = token
     user_data['membroDesde'] = membro_desde_str
     user_data['avatar'] = None 
-    user_data['totalMedicoes'] = 0
+    
+    # --- CORREÇÃO DO BUG 1 ---
+    # Buscamos o total real de medições em vez de enviar 0
+    user_data['totalMedicoes'] = Measurement.query.filter_by(user_id=user.id).count()
+    # --- FIM DA CORREÇÃO ---
 
     return jsonify(user_data)
 
@@ -104,7 +109,9 @@ def heartbeat(current_user):
         current_user.streak_count = 1
     
     current_user.last_active_date = local_date_obj
-    db.session.commit()
+    
+    # (Nota: db.session.commit() movido para dentro de update_achievement_progress)
+    # db.session.commit() 
     
 
     unlocked_streak_3 = update_achievement_progress(current_user, 'CONSISTENCIA_I', absolute_value=current_user.streak_count)
@@ -112,11 +119,20 @@ def heartbeat(current_user):
     
     unlocked_now = [ach for ach in [unlocked_streak_3, unlocked_streak_7] if ach]
 
+    # --- CORREÇÃO DO BUG 2 ---
+    # Buscamos o total de medições atualizado
+    # (A rota /sync já pode ter atualizado este número, 
+    # então o heartbeat precisa de o retornar)
+    total_medicoes_atual = Measurement.query.filter_by(user_id=current_user.id).count()
+
     return jsonify({
         'streak_count': current_user.streak_count,
         'last_active_date': current_user.last_active_date.isoformat(),
-        'unlocked_achievements': unlocked_now
+        'unlocked_achievements': unlocked_now,
+        'pontos': current_user.pontos, # Também é bom adicionar pontos aqui
+        'total_medicoes': total_medicoes_atual # ADICIONADO
     }), 200
+    # --- FIM DA CORREÇÃO ---
 
 @api.route('/ranking/<int:user_id>', methods=['GET'])
 @token_required
