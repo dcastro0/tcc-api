@@ -6,3 +6,4 @@ python-dotenv
 PyJWT
 Werkzeug
 Flask-CORS
+python-dateutil

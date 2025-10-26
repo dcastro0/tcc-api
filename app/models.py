@@ -32,12 +32,12 @@ class User(db.Model):
         
 class Achievement(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    code = db.Column(db.String(50), unique=True, nullable=False) # Código único (ex: 'PRIMEIRA_GOTA', 'CONSISTENCIA_I')
-    title = db.Column(db.String(100), nullable=False) # Título (ex: 'Primeira Gota')
-    description = db.Column(db.String(255), nullable=False) # Descrição
-    icon = db.Column(db.String(50), nullable=True) # Nome do ícone (ex: 'droplet')
-    goal = db.Column(db.Integer, nullable=True) # Meta numérica (ex: 3 dias, 50 medições)
-    points_reward = db.Column(db.Integer, default=0) # Pontos ao desbloquear
+    code = db.Column(db.String(50), unique=True, nullable=False)
+    title = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.String(255), nullable=False)
+    icon = db.Column(db.String(50), nullable=True)
+    goal = db.Column(db.Integer, nullable=True)
+    points_reward = db.Column(db.Integer, default=0)
 
     def to_dict(self):
         return {
@@ -55,7 +55,7 @@ class UserAchievement(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
     achievement_id = db.Column(db.Integer, db.ForeignKey('achievement.id'), nullable=False, index=True)
     progress = db.Column(db.Integer, default=0)
-    unlocked_at = db.Column(db.DateTime, nullable=True) # Data/hora que foi desbloqueada
+    unlocked_at = db.Column(db.DateTime, nullable=True)
 
     user = db.relationship('User', backref=db.backref('user_achievements', lazy=True))
     achievement = db.relationship('Achievement', backref=db.backref('user_achievements', lazy=True))
@@ -70,5 +70,22 @@ class UserAchievement(db.Model):
             'progress': self.progress,
             'unlocked': self.unlocked_at is not None,
             'unlocked_at': self.unlocked_at.isoformat() if self.unlocked_at else None,
-            **ach_data # Inclui os dados da definição da conquista
+            **ach_data
         }
+        
+class Measurement(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False, index=True)
+    
+    value = db.Column(db.Float, nullable=False)
+    date = db.Column(db.DateTime(timezone=True), nullable=False)
+    note = db.Column(db.Text, nullable=True)
+    
+    local_id = db.Column(db.String(100), nullable=True, index=True)
+
+    created_at = db.Column(db.DateTime(timezone=True), server_default=func.now())
+
+    user = db.relationship('User', backref=db.backref('measurements', lazy='dynamic'))
+
+    def __repr__(self):
+        return f'<Measurement {self.id} (User {self.user_id})>'

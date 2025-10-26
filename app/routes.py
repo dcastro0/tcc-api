@@ -4,8 +4,9 @@ from .extensions import db
 import jwt
 from datetime import datetime, timedelta, timezone, date
 from functools import wraps
-from .models import User, Achievement, UserAchievement
+from .models import User, Achievement, UserAchievement, Measurement
 from sqlalchemy.orm import joinedload
+from dateutil import parser
 
 api = Blueprint('api', __name__)
 
@@ -231,3 +232,82 @@ def update_achievement_progress(user, achievement_code, progress_increment=1, ab
        current_app.logger.error(f"Erro ao commitar atualização da conquista {achievement_code}: {e}")
 
     return None
+
+@api.route('/measurements/sync', methods=['POST'])
+@token_required
+def sync_measurements(current_user):
+    data = request.get_json()
+    
+    if not isinstance(data, list):
+        return jsonify({'message': 'Entrada inválida. Esperava uma lista de medições.'}), 400
+
+    new_measurements_added = 0
+    
+    # Usamos um set para checar IDs locais já sincronizados e evitar duplicidade
+    # (Esta é uma checagem simples, idealmente você usaria o local_id)
+    
+    for item in data:
+        try:
+            # Converte a data string (ISO 8601) do frontend para um objeto datetime
+            measurement_date = parser.isoparse(item.get('date'))
+            value = float(item.get('value'))
+            note = item.get('note')
+            
+            # (Opcional) Você pode adicionar 'local_id' ao seu JSON
+            # e verificar se já existe antes de adicionar
+
+            m = Measurement()
+            m.user_id = current_user.id
+            m.value = value
+            m.date = measurement_date
+            m.note = note
+            db.session.add(m)
+            new_measurements_added += 1
+
+        except Exception as e:
+            current_app.logger.error(f"Erro ao processar medição: {e}. Item: {item}")
+            # Pula este item e continua
+            pass
+
+    if new_measurements_added > 0:
+        try:
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            current_app.logger.error(f"Erro ao salvar medições no banco: {e}")
+            return jsonify({'message': 'Erro interno ao salvar medições.'}), 500
+
+    # --- ATUALIZAÇÃO DAS CONQUISTAS ---
+    # Após salvar, recalcula o progresso das conquistas de medição
+    try:
+        total_measurements = Measurement.query.filter_by(user_id=current_user.id).count()
+        
+        # Lista de códigos de conquistas de medição (do seu JSON)
+        measurement_achievements = [
+            'PRIMEIRA_GOTA', 
+            'MARATONISTA_I', 
+            'MARATONISTA_II', 
+            'MARATONISTA_III', 
+            'MESTRE_GLICEMICO'
+        ]
+        
+        unlocked_now = []
+        for code in measurement_achievements:
+            unlocked = update_achievement_progress(current_user, code, absolute_value=total_measurements)
+            if unlocked:
+                unlocked_now.append(unlocked)
+        
+        # 'db.session.commit()' já é chamado dentro de update_achievement_progress
+        
+        return jsonify({
+            'message': f'{new_measurements_added} medições sincronizadas com sucesso.',
+            'total_measurements_on_server': total_measurements,
+            'unlocked_achievements': unlocked_now
+        }), 201
+        
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Erro ao atualizar conquistas: {e}")
+        return jsonify({'message': 'Medições salvas, mas erro ao atualizar conquistas.'}), 500
+
+    return jsonify({'message': 'Nenhuma nova medição válida recebida.'}), 200
